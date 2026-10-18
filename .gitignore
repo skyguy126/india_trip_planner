@@ -1,0 +1,55 @@
+# Build / generated outputs
+dist/
+index.html
+data.json
+*.html.bak
+
+# Mapbox tokens (never commit real keys — copy mapbox.example.json)
+config/mapbox.public.json
+config/mapbox.local.json
+config/*.secret.json
+config/*credentials*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+credentials.json
+**/secrets.*
+**/*token*.local*
+**/*secret*
+
+# Python / Node caches and deps
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+.npm/
+.cache/
+package-lock.json
+
+# Archives and agent verifier scratch
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+verification_*.txt
+verifier_*.json
+.tmp/
+tmp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+*.code-workspace

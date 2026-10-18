@@ -23,13 +23,13 @@ All generated outputs belong in ignored `dist/`. The source archive deliberately
 
 - The filter icon beside Explore opens a panel with **Experiences** and **Regions** tabs. Experiences cover temples/shrines, history/forts, adventure, caves, beaches/water, wildlife, culture and night skies. Selected experiences or regions match **any** within that group; search and the season checkbox narrow results further. Clear filters resets both tabs.
 - Hover a pin for a photo preview. Move onto the preview to browse its photo arrows, open a large image, view details or add the destination. A large cluster previews its member destinations; separate arrows change the place and the photograph. Click a cluster to keep its preview open, then choose **Zoom into group** if desired. Touch users can tap clusters or use the destination list. Individual pin clicks open the detail card; Shift-click adds/removes a stop.
-- Add at least two places, choose dates and route settings, then Generate route. The time/cost slider previews its priority as you drag and recalculates once when released. The optimizer preserves the selected set; it does not silently discard places.
+- Add at least two places, choose dates and route settings, then Generate route. The optimizer automatically rearranges stops into the best order for your time/cost priority. The time/cost slider previews its priority as you drag and recalculates once when released. The optimizer preserves the selected set; it does not silently discard places.
 - Expand **Compare travel options** for compact alternatives. Each mode has its own price and time; selected-path details show ranges, handling buffers and source links. USD is primary, original INR secondary. The editable conversion rate changes display, not the optimizer's INR calculations.
 - Remove a stop with its ×. Clear route removes calculated legs while keeping selected places; Clear all removes both. Reset view restores the full map. Use the theme button for light/dark mode.
 - Weather uses Fahrenheit first, Celsius below, with a seasonal-condition icon. These are historical climate bands or regional proxies, **not a live forecast**. Visit durations and prices are planning estimates. Transport connections and permits still need checking against your actual dates and traveler status.
 - Export JSON to back up selections/settings and Markdown for the itinerary. File-browser storage support varies; exports are the dependable backup.
 
-Keyboard: `/` search; Escape closes overlays; `F` fits visible places; Ctrl/Cmd+Z undoes a selection/settings change. Tab and Enter operate list and popup controls. Photo galleries use left/right arrows when focused. Reorder stops by dragging or with ↑/↓ buttons. Motion respects reduced-motion preferences.
+Keyboard: `/` search; Escape closes overlays; `F` fits visible places; Ctrl/Cmd+Z undoes a selection/settings change. Tab and Enter operate list and popup controls. Photo galleries use left/right arrows when focused. Stop order is chosen by the route optimizer (optional start/end pins remain in Route settings). Motion respects reduced-motion preferences.
 
 ## Scope and limitations
 

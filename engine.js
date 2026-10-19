@@ -10,9 +10,12 @@ const TripEngine = (() => {
     const adj=Object.fromEntries(data.nodes.map(n=>[n.id,[]]));
     const closed=new Set(data.destinations.filter(d=>!allowed(d,s.month)).map(d=>d.id));
     for(const e of data.edges){
-      if(!s.modes.includes(e.mode)||!e.months.includes(s.month)||closed.has(e.a)||closed.has(e.b))continue;
-      const cost=amounts(e,s.party),hours=edgeHours(e);
-      const score=(cost.low+cost.high)/2/s.party+valueOfTime(s.balance)*hours;
+      // Last-mile hub connectors stay available so routing can end at the nearest airport/railhead.
+      const access=!!e.access;
+      if((!access&&!s.modes.includes(e.mode))||!e.months.includes(s.month)||closed.has(e.a)||closed.has(e.b))continue;
+      // Access edges are free connectors; last-mile cost/time is left for the traveler to arrange.
+      const cost=access?{low:0,high:0}:amounts(e,s.party),hours=access?0:edgeHours(e);
+      const score=access?0:(cost.low+cost.high)/2/s.party+valueOfTime(s.balance)*hours;
       adj[e.a].push({to:e.b,edge:e,score,hours,...cost});adj[e.b].push({to:e.a,edge:e,score,hours,...cost});
     }
     return {adj,s};
@@ -31,7 +34,7 @@ const TripEngine = (() => {
     while(v!==a){const p=t.prev[v];if(!p||guard++>1000)return null;steps.unshift({from:p.from,to:v,...p});v=p.from;}
     return {from:a,to:b,steps,hours:steps.reduce((s,e)=>s+e.hours,0),low:steps.reduce((s,e)=>s+e.low,0),high:steps.reduce((s,e)=>s+e.high,0),score:t.dist[b]};
   }
-  function modeTotals(steps){const groups=new Map();for(const s of steps){const m=s.edge.mode,transit=s.edge.hours,handling=Math.max(0,s.hours-transit);if(!transit&&!handling&&!s.low&&!s.high)continue;if(!groups.has(m))groups.set(m,{mode:m,low:0,high:0,transit:0,handling:0,hours:0,segments:0});const g=groups.get(m);g.low+=s.low;g.high+=s.high;g.transit+=transit;g.handling+=handling;g.hours+=s.hours;g.segments++;}return ['road','flight','train','boat'].filter(m=>groups.has(m)).map(m=>groups.get(m));}
+  function modeTotals(steps){const groups=new Map();for(const s of steps){if(s.edge.access)continue;const m=s.edge.mode,transit=s.edge.hours,handling=Math.max(0,s.hours-transit);if(!transit&&!handling&&!s.low&&!s.high)continue;if(!groups.has(m))groups.set(m,{mode:m,low:0,high:0,transit:0,handling:0,hours:0,segments:0});const g=groups.get(m);g.low+=s.low;g.high+=s.high;g.transit+=transit;g.handling+=handling;g.hours+=s.hours;g.segments++;}return ['road','flight','train','boat'].filter(m=>groups.has(m)).map(m=>groups.get(m));}
   function pathOptions(data,a,b,settings){
     const r=[];
     for(const [kind,balance] of [['Balanced',settings.balance],['Cheapest',0],['Quickest',100]]){
@@ -85,7 +88,7 @@ const TripEngine = (() => {
     const graph=build(data,settings),trees=ids.map(id=>tree(graph,id));
     const m=ids.map((a,i)=>ids.map(b=>a===b?0:trees[i].dist[b]??Infinity));
     const unavailable=[];for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++)if(!finite(m[i][j]))unavailable.push(by[ids[i]].name+' ↔ '+by[ids[j]].name);
-    if(unavailable.length)throw Error('No known connection with these modes/month: '+unavailable.slice(0,2).join('; ')+'. Enable road access, add flights/trains, or choose another month.');
+    if(unavailable.length)throw Error('No known connection with these modes/month: '+unavailable.slice(0,2).join('; ')+'. Enable road corridors, add flights/trains, or choose another month.');
     const order=ids.length<=12?exact(m,start,end,!!settings.loop):heuristic(m,start,end,!!settings.loop);
     if(!order)throw Error('No valid order matches those start and finish constraints.');
     const ordered=order.map(i=>ids[i]),pairs=ordered.slice(1).map((id,i)=>[ordered[i],id]);if(settings.loop)pairs.push([ordered.at(-1),ordered[0]]);

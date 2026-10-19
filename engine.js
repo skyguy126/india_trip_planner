@@ -5,20 +5,54 @@ const TripEngine = (() => {
   function allowed(d,month){return !d.closedMonths.includes(month);}
   function amounts(e,party){const m=e.basis==='vehicle'?Math.ceil(party/4):party;return {low:e.low*m,high:e.high*m};}
   function edgeHours(e){return e.hours+(e.mode==='flight'?(e.a==='KTM'||e.b==='KTM'?3:2):e.mode==='train'?.5:0);}
+  function hubService(data){
+    const flight=new Map(),train=new Map(),boat=new Map();
+    for(const e of data.edges){
+      const bump=(m,a,b)=>{m.set(a,(m.get(a)||0)+1);m.set(b,(m.get(b)||0)+1);};
+      if(e.mode==='flight')bump(flight,e.a,e.b);else if(e.mode==='train')bump(train,e.a,e.b);else if(e.mode==='boat')bump(boat,e.a,e.b);
+    }
+    const served=id=>(flight.get(id)||0)+(train.get(id)||0)+(boat.get(id)||0)>0;
+    // Prefer real commercial gateways over thin regional strips (e.g. Chandigarh over Dharamshala for Manali).
+    const viable=id=>(flight.get(id)||0)>=2||(train.get(id)||0)>=2||(boat.get(id)||0)>=1;
+    return {served,viable};
+  }
+  // One last-mile feeder per flightless hub → closest viable airport/railhead.
+  function feederEdgeIds(data,month){
+    const {served,viable}=hubService(data),best=new Map();
+    const consider=(preferViable)=>{
+      for(const e of data.edges){
+        if(e.mode!=='road'||e.access||!e.months.includes(month))continue;
+        const a=served(e.a),b=served(e.b);if(a===b)continue;
+        const orphan=a?e.b:e.a,gate=a?e.a:e.b;
+        if(preferViable&&!viable(gate))continue;
+        // Fallback only fills hubs that had no viable gateway — never replace a major hub with a shorter regional strip.
+        if(!preferViable&&best.has(orphan))continue;
+        const prev=best.get(orphan);
+        if(!prev||e.hours<prev.hours)best.set(orphan,{id:e.id,hours:e.hours});
+      }
+    };
+    consider(true);consider(false);
+    return new Set([...best.values()].map(v=>v.id));
+  }
   function build(data,settings={}) {
-    const s={month:12,party:1,balance:50,modes:['flight','train','road','boat'],...settings};
+    const s={month:12,party:1,balance:50,modes:['flight','train','boat'],...settings};
+    const modes=s.modes.filter(m=>m!=='road');
     const adj=Object.fromEntries(data.nodes.map(n=>[n.id,[]]));
     const closed=new Set(data.destinations.filter(d=>!allowed(d,s.month)).map(d=>d.id));
+    const feeders=feederEdgeIds(data,s.month);
+    const vot=valueOfTime(s.balance);
     for(const e of data.edges){
-      // Last-mile hub connectors stay available so routing can end at the nearest airport/railhead.
-      const access=!!e.access;
-      if((!access&&!s.modes.includes(e.mode))||!e.months.includes(s.month)||closed.has(e.a)||closed.has(e.b))continue;
-      // Access edges are free connectors; last-mile cost/time is left for the traveler to arrange.
-      const cost=access?{low:0,high:0}:amounts(e,s.party),hours=access?0:edgeHours(e);
-      const score=access?0:(cost.low+cost.high)/2/s.party+valueOfTime(s.balance)*hours;
-      adj[e.a].push({to:e.b,edge:e,score,hours,...cost});adj[e.b].push({to:e.a,edge:e,score,hours,...cost});
+      if(!e.months.includes(s.month)||closed.has(e.a)||closed.has(e.b))continue;
+      const access=!!e.access,feeder=feeders.has(e.id),lastMile=access||feeder;
+      if(e.mode==='road'&&!access&&!feeder)continue;
+      if(!lastMile&&!modes.includes(e.mode))continue;
+      // Last-mile: no fare, but driving time counts in the optimizer score and trip duration.
+      const cost=lastMile?{low:0,high:0}:amounts(e,s.party);
+      const hours=lastMile?e.hours:edgeHours(e);
+      const score=lastMile?vot*hours:(cost.low+cost.high)/2/s.party+vot*hours;
+      adj[e.a].push({to:e.b,edge:e,score,hours,lastMile,...cost});adj[e.b].push({to:e.a,edge:e,score,hours,lastMile,...cost});
     }
-    return {adj,s};
+    return {adj,s:{...s,modes}};
   }
   // Binary heap keeps all-stop optimization responsive even on the full destination bank.
   class Heap{constructor(){this.a=[];}push(v){let a=this.a,i=a.length;a.push(v);while(i){let p=(i-1)>>1;if(a[p][0]<=v[0])break;a[i]=a[p];i=p;}a[i]=v;}pop(){const a=this.a,root=a[0],v=a.pop();if(a.length){let i=0;while(2*i+1<a.length){let j=2*i+1;if(j+1<a.length&&a[j+1][0]<a[j][0])j++;if(a[j][0]>=v[0])break;a[i]=a[j];i=j;}a[i]=v;}return root;}}
@@ -34,7 +68,21 @@ const TripEngine = (() => {
     while(v!==a){const p=t.prev[v];if(!p||guard++>1000)return null;steps.unshift({from:p.from,to:v,...p});v=p.from;}
     return {from:a,to:b,steps,hours:steps.reduce((s,e)=>s+e.hours,0),low:steps.reduce((s,e)=>s+e.low,0),high:steps.reduce((s,e)=>s+e.high,0),score:t.dist[b]};
   }
-  function modeTotals(steps){const groups=new Map();for(const s of steps){if(s.edge.access)continue;const m=s.edge.mode,transit=s.edge.hours,handling=Math.max(0,s.hours-transit);if(!transit&&!handling&&!s.low&&!s.high)continue;if(!groups.has(m))groups.set(m,{mode:m,low:0,high:0,transit:0,handling:0,hours:0,segments:0});const g=groups.get(m);g.low+=s.low;g.high+=s.high;g.transit+=transit;g.handling+=handling;g.hours+=s.hours;g.segments++;}return ['road','flight','train','boat'].filter(m=>groups.has(m)).map(m=>groups.get(m));}
+  function isLastMile(s){return !!(s.lastMile||s.edge?.access||s.edge?.mode==='road');}
+  function modeTotals(steps){
+    const groups=new Map();
+    for(const s of steps){
+      const last=isLastMile(s),m=last?'lastmile':s.edge.mode;
+      const transit=last?s.hours:s.edge.hours,handling=last?0:Math.max(0,s.hours-transit);
+      if(!transit&&!handling&&!s.low&&!s.high)continue;
+      if(!groups.has(m))groups.set(m,{mode:m,low:0,high:0,transit:0,handling:0,hours:0,segments:0});
+      const g=groups.get(m);
+      if(last){g.transit+=s.hours;g.hours+=s.hours;}
+      else{g.low+=s.low;g.high+=s.high;g.transit+=transit;g.handling+=handling;g.hours+=s.hours;}
+      g.segments++;
+    }
+    return ['flight','train','boat','lastmile'].filter(m=>groups.has(m)).map(m=>groups.get(m));
+  }
   function pathOptions(data,a,b,settings){
     const r=[];
     for(const [kind,balance] of [['Balanced',settings.balance],['Cheapest',0],['Quickest',100]]){
@@ -88,7 +136,7 @@ const TripEngine = (() => {
     const graph=build(data,settings),trees=ids.map(id=>tree(graph,id));
     const m=ids.map((a,i)=>ids.map(b=>a===b?0:trees[i].dist[b]??Infinity));
     const unavailable=[];for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++)if(!finite(m[i][j]))unavailable.push(by[ids[i]].name+' ↔ '+by[ids[j]].name);
-    if(unavailable.length)throw Error('No known connection with these modes/month: '+unavailable.slice(0,2).join('; ')+'. Enable road corridors, add flights/trains, or choose another month.');
+    if(unavailable.length)throw Error('No known flight/train/ferry connection with these modes/month: '+unavailable.slice(0,2).join('; ')+'. Add flights or trains, or choose another month. Road/car travel is not planned.');
     const order=ids.length<=12?exact(m,start,end,!!settings.loop):heuristic(m,start,end,!!settings.loop);
     if(!order)throw Error('No valid order matches those start and finish constraints.');
     const ordered=order.map(i=>ids[i]),pairs=ordered.slice(1).map((id,i)=>[ordered[i],id]);if(settings.loop)pairs.push([ordered.at(-1),ordered[0]]);
@@ -96,6 +144,6 @@ const TripEngine = (() => {
     const originalScore=routeScore(ids.map((_,i)=>i),m,!!settings.loop),optimizedScore=routeScore(order,m,!!settings.loop);
     return {order:ordered,legs,method:ids.length<=12?'Exact within this network':'Multi-start + 2-opt heuristic',objective:optimizedScore,originalObjective:originalScore,settings:{...settings},generated:new Date().toISOString()};
   }
-  return {valueOfTime,allowed,amounts,edgeHours,build,tree,path,modeTotals,pathOptions,solve,routeScore,exact,heuristic};
+  return {valueOfTime,allowed,amounts,edgeHours,build,tree,path,modeTotals,isLastMile,pathOptions,solve,routeScore,exact,heuristic};
 })();
 if(typeof module!=='undefined')module.exports=TripEngine;
